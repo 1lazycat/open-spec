@@ -1,0 +1,711 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workflow Console</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;650&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --bg:#EEF1F6; --surface:#FFFFFF; --surface-2:#F7F8FB; --rail:#10141B;
+    --ink:#10141B; --ink-soft:#4E5766; --ink-faint:#8B94A3;
+    --line:#DDE3EC; --line-soft:#EAEDF3;
+    --accent:#1E6E6A; --accent-soft:#DCEFEC; --accent-strong:#0F4744;
+    --ok:#227A4F; --ok-soft:#E1F3E9;
+    --warn:#8F6013; --warn-soft:#FBF0DC;
+    --bad:#B23A2E; --bad-soft:#FBE7E4;
+    --info:#2E62B0; --info-soft:#E7EEFC;
+    --pend:#8B94A3; --pend-soft:#EEF1F5;
+    --cat-trigger:#1E6E6A; --cat-trigger-soft:#DCEFEC;
+    --cat-approval:#6E56CF; --cat-approval-soft:#ECE7FB;
+    --cat-control:#966016; --cat-control-soft:#F6EAD3;
+    --cat-action:#2E62B0; --cat-action-soft:#E7EEFC;
+    --cat-loop:#B2531E; --cat-loop-soft:#F8E7DA;
+    --cat-agentic:#A83E82; --cat-agentic-soft:#F6E4EF;
+    --cat-terminal:#4B5568; --cat-terminal-soft:#E7E9EE;
+    --shadow-sm:0 1px 2px rgba(16,20,27,.06);
+    --shadow-md:0 4px 16px rgba(16,20,27,.10);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0E131C; --surface:#161C28; --surface-2:#1B2230; --rail:#0A0E15;
+      --ink:#E9EDF4; --ink-soft:#A7B0C0; --ink-faint:#6B7488;
+      --line:#2A3242; --line-soft:#212938;
+      --accent:#4FBDB6; --accent-soft:#153431; --accent-strong:#8FE0DA;
+      --ok:#41BE86; --ok-soft:#123423;
+      --warn:#E0A83E; --warn-soft:#392C10;
+      --bad:#E2685C; --bad-soft:#391B17;
+      --info:#6C9EEA; --info-soft:#152238;
+      --pend:#79839A; --pend-soft:#1C2330;
+      --cat-trigger:#4FBDB6; --cat-trigger-soft:#153431;
+      --cat-approval:#A995F0; --cat-approval-soft:#241E3D;
+      --cat-control:#E0A83E; --cat-control-soft:#392C10;
+      --cat-action:#6C9EEA; --cat-action-soft:#152238;
+      --cat-loop:#E08A52; --cat-loop-soft:#3A2413;
+      --cat-agentic:#E38BC3; --cat-agentic-soft:#3A2131;
+      --cat-terminal:#9AA3B6; --cat-terminal-soft:#232A38;
+      --shadow-sm:0 1px 2px rgba(0,0,0,.35);
+      --shadow-md:0 8px 24px rgba(0,0,0,.45);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0E131C; --surface:#161C28; --surface-2:#1B2230; --rail:#0A0E15;
+    --ink:#E9EDF4; --ink-soft:#A7B0C0; --ink-faint:#6B7488;
+    --line:#2A3242; --line-soft:#212938;
+    --accent:#4FBDB6; --accent-soft:#153431; --accent-strong:#8FE0DA;
+    --ok:#41BE86; --ok-soft:#123423;
+    --warn:#E0A83E; --warn-soft:#392C10;
+    --bad:#E2685C; --bad-soft:#391B17;
+    --info:#6C9EEA; --info-soft:#152238;
+    --pend:#79839A; --pend-soft:#1C2330;
+    --cat-trigger:#4FBDB6; --cat-trigger-soft:#153431;
+    --cat-approval:#A995F0; --cat-approval-soft:#241E3D;
+    --cat-control:#E0A83E; --cat-control-soft:#392C10;
+    --cat-action:#6C9EEA; --cat-action-soft:#152238;
+    --cat-loop:#E08A52; --cat-loop-soft:#3A2413;
+    --cat-agentic:#E38BC3; --cat-agentic-soft:#3A2131;
+    --cat-terminal:#9AA3B6; --cat-terminal-soft:#232A38;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.35);
+    --shadow-md:0 8px 24px rgba(0,0,0,.45);
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0; height:100%;}
+  body{font-family:'IBM Plex Sans',system-ui,sans-serif; color:var(--ink); background:var(--bg); -webkit-font-smoothing:antialiased;}
+  button, input, textarea{font-family:inherit;}
+  .mono{font-family:'IBM Plex Mono',ui-monospace,monospace;}
+  ::selection{background:var(--accent-soft); color:var(--accent-strong);}
+  a{color:var(--accent);}
+  :focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
+
+  .app{width:100%; height:100vh; min-height:640px; display:flex; flex-direction:column; background:var(--bg); overflow:hidden;}
+
+  /* ---- rail ---- */
+  .shell{flex:1; display:flex; min-height:0;}
+  .rail{width:58px; flex-shrink:0; background:var(--rail); display:flex; flex-direction:column; align-items:center; padding:16px 0; gap:6px;}
+  .rail-logo{width:30px; height:30px; border-radius:8px; background:var(--accent); margin-bottom:14px; display:flex; align-items:center; justify-content:center;}
+  .rail-btn{width:40px; height:40px; border-radius:9px; display:flex; align-items:center; justify-content:center; color:#7A8394; background:none; border:none; cursor:pointer; position:relative;}
+  .rail-btn:hover{background:#FFFFFF14; color:#C6CCD6;}
+  .rail-btn.active{background:#FFFFFF20; color:#fff;}
+  .rail-btn .tip{position:absolute; left:52px; top:50%; transform:translateY(-50%); background:#10141B; color:#fff; font:600 11px/1 'IBM Plex Sans',sans-serif; padding:6px 9px; border-radius:6px; white-space:nowrap; opacity:0; pointer-events:none; transition:opacity .12s; box-shadow:var(--shadow-md); z-index:40;}
+  .rail-btn:hover .tip{opacity:1;}
+  .rail-spacer{flex:1;}
+  .rail-avatar{width:28px; height:28px; border-radius:50%; background:var(--accent-soft); color:var(--accent-strong); font:600 10.5px/28px 'IBM Plex Sans',sans-serif; text-align:center;}
+
+  /* ---- top bar ---- */
+  .topbar{height:58px; flex-shrink:0; background:var(--surface); border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; padding:0 22px;}
+  .crumb{font-size:13px; color:var(--ink-faint);}
+  .crumb-title{font:600 14.5px/1 'IBM Plex Sans',sans-serif; color:var(--ink);}
+  .pill{display:inline-flex; align-items:center; gap:5px; font:600 10px/1 'IBM Plex Mono',monospace; letter-spacing:.02em; padding:4px 9px; border-radius:10px;}
+  .dot{width:6px; height:6px; border-radius:50%; display:inline-block; flex-shrink:0;}
+  .btn{font:600 12.5px/1 'IBM Plex Sans',sans-serif; padding:9px 15px; border-radius:7px; border:1px solid var(--line); background:var(--surface); color:var(--ink-soft); cursor:pointer; transition:background .12s, border-color .12s;}
+  .btn:hover{background:var(--surface-2);}
+  .btn-primary{background:var(--accent); border-color:var(--accent); color:#fff;}
+  .btn-primary:hover{background:var(--accent-strong); border-color:var(--accent-strong);}
+  .btn-danger{border-color:#D9B0AC; color:var(--bad);}
+  .btn-danger:hover{background:var(--bad-soft);}
+  .btn-ok{background:var(--ok); border-color:var(--ok); color:#fff;}
+  .btn-ok:hover{filter:brightness(1.06);}
+  .btn-reject{background:var(--surface); border-color:#D9B0AC; color:var(--bad);}
+  .btn-reject:hover{background:var(--bad-soft);}
+
+  /* ---- generic view scaffolding ---- */
+  .view{flex:1; display:none; min-height:0;}
+  .view.active{display:flex;}
+  .col{display:flex; flex-direction:column; min-height:0;}
+
+  /* ---- node palette ---- */
+  .palette{width:230px; flex-shrink:0; background:var(--surface); border-right:1px solid var(--line); display:flex; flex-direction:column; min-height:0;}
+  .palette-head{padding:14px 14px 10px; flex-shrink:0;}
+  .palette-title{font:650 12.5px/1 'IBM Plex Sans',sans-serif; color:var(--ink); margin-bottom:10px;}
+  .palette-search{position:relative;}
+  .palette-search input{width:100%; font:500 12px/1 'IBM Plex Sans',sans-serif; color:var(--ink); background:var(--surface-2); border:1px solid var(--line); border-radius:7px; padding:8px 10px 8px 30px;}
+  .palette-search input::placeholder{color:var(--ink-faint);}
+  .palette-search svg{position:absolute; left:9px; top:50%; transform:translateY(-50%); color:var(--ink-faint);}
+  .palette-body{flex:1; overflow-y:auto; padding:4px 10px 16px;}
+  .palette-cat{display:flex; align-items:center; gap:7px; padding:14px 4px 7px;}
+  .palette-cat-icon{width:16px; height:16px; border-radius:4px; display:flex; align-items:center; justify-content:center; flex-shrink:0;}
+  .palette-cat-label{font:650 10px/1 'IBM Plex Sans',sans-serif; text-transform:uppercase; letter-spacing:.07em;}
+  .palette-item{display:flex; align-items:center; gap:10px; padding:8px 8px; border-radius:8px; cursor:grab; border:1px solid transparent;}
+  .palette-item:hover{background:var(--surface-2); border-color:var(--line);}
+  .palette-item-icon{width:28px; height:28px; border-radius:7px; display:flex; align-items:center; justify-content:center; flex-shrink:0;}
+  .palette-item-name{font:600 12px/1.3 'IBM Plex Sans',sans-serif; color:var(--ink);}
+  .palette-item-kind{font:400 9.5px/1.3 'IBM Plex Mono',monospace; color:var(--ink-faint); margin-top:1px;}
+  .palette-item-handle{margin-left:auto; color:var(--ink-faint); opacity:0; flex-shrink:0;}
+  .palette-item:hover .palette-item-handle{opacity:1;}
+
+  /* ---- canvas ---- */
+  .canvas-wrap{flex:1; position:relative; overflow:auto; background-color:var(--bg);
+    background-image:radial-gradient(circle, color-mix(in srgb, var(--ink) 14%, transparent) 1px, transparent 1px);
+    background-size:20px 20px;}
+  .canvas-inner{position:relative; width:1210px; height:400px; margin:28px;}
+  .node{position:absolute; border-radius:9px; background:var(--surface); padding:9px 11px; cursor:pointer; border:1px solid var(--line); box-shadow:var(--shadow-sm); transition:box-shadow .12s, border-color .12s;}
+  .node:hover{box-shadow:var(--shadow-md);}
+  .node.sel{border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft), var(--shadow-md);}
+  .node-cat-tag{display:inline-block; font:650 8px/1 'IBM Plex Mono',monospace; text-transform:uppercase; letter-spacing:.05em; padding:2px 6px; border-radius:4px; margin-bottom:5px;}
+  .node-name{font:600 12.5px/1.3 'IBM Plex Sans',sans-serif; color:var(--ink);}
+  .node-kind{font:400 9.5px/1.3 'IBM Plex Mono',monospace; color:var(--ink-faint); margin-top:2px;}
+  .node-trigger{border-radius:22px; display:flex; align-items:center; justify-content:center; background:var(--accent);}
+  .node-trigger .node-name{color:#fff;}
+  .status-pill{display:inline-flex; align-items:center; gap:4px; font:650 8.5px/1 'IBM Plex Sans',sans-serif; text-transform:uppercase; letter-spacing:.03em; padding:3px 7px; border-radius:9px; float:right;}
+
+  /* ---- inspector ---- */
+  .inspector{width:312px; flex-shrink:0; background:var(--surface); border-left:1px solid var(--line); overflow-y:auto;}
+  .insp-head{padding:16px 18px; border-bottom:1px solid var(--line);}
+  .field-label{font:650 10.5px/1 'IBM Plex Sans',sans-serif; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-faint); margin-bottom:6px;}
+  .fx-chip{display:inline-block; font:650 8px/1 'IBM Plex Mono',monospace; letter-spacing:.04em; color:var(--accent-strong); background:var(--accent-soft); padding:2px 5px; border-radius:3px; margin-right:6px; vertical-align:middle;}
+  .expr-box{font:400 11.5px/1.5 'IBM Plex Mono',monospace; color:var(--ink); background:var(--surface-2); border:1px solid var(--line); border-radius:7px; padding:8px 10px; word-break:break-word;}
+  .insp-section{padding:15px 18px; border-bottom:1px solid var(--line-soft);}
+  .insp-section-title{font:650 10px/1 'IBM Plex Sans',sans-serif; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-faint); margin-bottom:11px;}
+  .kv-row{display:flex; justify-content:space-between; align-items:baseline; padding:5px 0; font-size:12.5px;}
+  .kv-row .k{color:var(--ink-soft);} .kv-row .v{color:var(--ink); font-weight:600;}
+  .select-field{width:100%; font:500 12.5px/1 'IBM Plex Sans',sans-serif; color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:7px; padding:9px 10px;}
+  .help-text{font-size:12px; line-height:1.6; color:var(--ink-soft);}
+
+  /* ---- run view ---- */
+  .run-canvas{height:410px; flex-shrink:0; border-bottom:1px solid var(--line);}
+  .run-lower{flex:1; display:flex; flex-direction:column; min-height:0; background:var(--surface);}
+  .tabs{display:flex; gap:22px; padding:0 20px; border-bottom:1px solid var(--line); flex-shrink:0;}
+  .tab-btn{font:650 12.5px/1 'IBM Plex Sans',sans-serif; padding:13px 2px; background:none; border:none; cursor:pointer; border-bottom:2px solid transparent; color:var(--ink-faint);}
+  .tab-btn.active{color:var(--ink); border-bottom-color:var(--accent);}
+  table{border-collapse:collapse; width:100%;}
+  th{text-align:left; font:650 9.5px/1 'IBM Plex Sans',sans-serif; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-faint); padding:9px 16px; background:var(--surface-2); position:sticky; top:0;}
+  td{padding:7px 16px; font-size:12px; color:var(--ink); border-bottom:1px solid var(--line-soft); vertical-align:top;}
+  td.t{color:var(--ink-faint); font-family:'IBM Plex Mono',monospace; font-size:11px; white-space:nowrap; font-variant-numeric:tabular-nums;}
+  td.n{font-family:'IBM Plex Mono',monospace; font-size:11px; white-space:nowrap;}
+  .stat-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:20px;}
+  .stat-label{font-size:10px; text-transform:uppercase; color:var(--ink-faint); letter-spacing:.05em; margin-bottom:4px;}
+  .stat-val{font-weight:650;}
+
+  /* ---- approvals view ---- */
+  .req-list{width:390px; flex-shrink:0; background:var(--surface); border-right:1px solid var(--line); overflow-y:auto;}
+  .req-list-head{padding:14px 16px 6px; font:650 10px/1 'IBM Plex Sans',sans-serif; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-faint);}
+  .req-card{display:flex; align-items:flex-start; gap:10px; padding:13px 16px; border-bottom:1px solid var(--line-soft); cursor:pointer; border-left:3px solid transparent;}
+  .req-card:hover{background:var(--surface-2);}
+  .req-card.sel{background:var(--accent-soft); border-left-color:var(--accent);}
+  .req-card.done{opacity:.55; cursor:default;}
+  .req-wf{font:600 12.5px/1.3 'IBM Plex Sans',sans-serif; color:var(--ink);}
+  .req-node{font:400 11px/1.4 'IBM Plex Sans',sans-serif; color:var(--ink-soft); margin-top:2px;}
+  .req-meta{font:400 10.5px/1 'IBM Plex Mono',monospace; color:var(--ink-faint); margin-top:6px;}
+  .req-icon{width:26px; height:26px; border-radius:7px; display:flex; align-items:center; justify-content:center; flex-shrink:0; margin-top:1px;}
+  .detail-pane{flex:1; overflow-y:auto; background:var(--bg);}
+  .detail-inner{max-width:620px; margin:0 auto;}
+  textarea.comment{width:100%; min-height:64px; font:400 12.5px/1.5 'IBM Plex Sans',sans-serif; color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:7px; padding:9px 10px; resize:vertical; margin-bottom:12px;}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="shell">
+    <!-- ============ RAIL ============ -->
+    <div class="rail">
+      <div class="rail-logo">
+        <svg width="18" height="18" viewBox="0 0 20 20"><circle cx="6" cy="7" r="2.2" fill="#fff"/><circle cx="14" cy="13" r="2.2" fill="#fff"/><path d="M7.6 8.4L12.4 11.6" stroke="#fff" stroke-width="1.5"/></svg>
+      </div>
+      <button class="rail-btn" data-view="designer" onclick="setView('designer')">
+        <svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="2" width="7" height="7" rx="1.6"/><rect x="11" y="2" width="7" height="7" rx="1.6"/><rect x="2" y="11" width="7" height="7" rx="1.6"/><rect x="11" y="11" width="7" height="7" rx="1.6"/></svg>
+        <span class="tip">Designer</span>
+      </button>
+      <button class="rail-btn" data-view="run" onclick="setView('run')">
+        <svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 10h4l2-6 4 12 2-6h4"/></svg>
+        <span class="tip">Runs</span>
+      </button>
+      <button class="rail-btn" data-view="approvals" onclick="setView('approvals')">
+        <svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="2.5" width="15" height="15" rx="3"/><path d="M6 10.2l2.4 2.4 5.2-5.6"/></svg>
+        <span class="tip">Approvals</span>
+      </button>
+      <div class="rail-spacer"></div>
+      <div class="rail-avatar">SG</div>
+    </div>
+
+    <div class="col" style="flex:1; min-width:0;">
+
+      <!-- ============ TOP BARS ============ -->
+      <div class="topbar" id="topbar-designer">
+        <div style="display:flex; align-items:baseline; gap:10px;">
+          <span class="crumb">Workflows</span><span class="crumb">/</span>
+          <span class="crumb-title">Provision Azure Databricks</span>
+          <span class="pill" style="background:var(--warn-soft); color:var(--warn); margin-left:4px;">v1 &middot; DRAFT</span>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn">Import JSON</button>
+          <button class="btn">Export JSON</button>
+          <button class="btn btn-primary">Publish</button>
+        </div>
+      </div>
+
+      <div class="topbar" id="topbar-run" style="display:none;">
+        <div style="display:flex; align-items:baseline; gap:10px;">
+          <span class="crumb">Runs</span><span class="crumb">/</span>
+          <span class="crumb-title mono">run-8f21c3f0</span>
+          <span class="pill" style="background:var(--info-soft); color:var(--info); margin-left:4px;"><span class="dot" style="background:var(--info);"></span>Running</span>
+          <span class="crumb" style="margin-left:6px;">Provision Azure Databricks &middot; started by sudip@company.example &middot; 2 min ago</span>
+        </div>
+        <button class="btn btn-danger">Stop run</button>
+      </div>
+
+      <div class="topbar" id="topbar-approvals" style="display:none;">
+        <div style="display:flex; align-items:baseline; gap:10px;">
+          <span class="crumb-title">Approval inbox</span>
+          <span class="pill" style="background:var(--warn-soft); color:var(--warn); margin-left:4px;">3 PENDING</span>
+        </div>
+        <span class="crumb">Signed in as <b style="color:var(--ink);">Sudip</b></span>
+      </div>
+
+      <!-- ============ DESIGNER VIEW ============ -->
+      <div class="view active" id="view-designer">
+        <div class="palette">
+          <div class="palette-head">
+            <div class="palette-title">Node palette</div>
+            <div class="palette-search">
+              <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="9" r="6.2"/><path d="M17 17l-3.6-3.6"/></svg>
+              <input type="text" placeholder="Search nodes&hellip;">
+            </div>
+          </div>
+          <div class="palette-body" id="palette-body"><!-- filled by JS --></div>
+        </div>
+
+        <div class="canvas-wrap">
+          <div class="canvas-inner">
+            <svg width="1210" height="400" style="position:absolute; left:0; top:0; overflow:visible;">
+              <defs>
+                <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+                  <path d="M0,0 L10,5 L0,10 z" fill="var(--ink-faint)"/>
+                </marker>
+              </defs>
+              <g stroke="var(--ink-faint)" stroke-width="1.8" fill="none" marker-end="url(#arrow)">
+                <path d="M90,215 C112.5,215 112.5,112 135,112"/>
+                <path d="M90,215 C112.5,215 112.5,302 135,302"/>
+                <path d="M270,112 C292.5,112 292.5,203 315,203"/>
+                <path d="M270,302 C292.5,302 292.5,203 315,203"/>
+                <path d="M435,203 C457.5,203 457.5,112 480,112"/>
+                <path d="M435,203 C457.5,203 457.5,302 480,302"/>
+                <path d="M610,112 C632.5,112 632.5,112 655,112"/>
+                <path d="M775,112 C797.5,112 797.5,112 820,112"/>
+                <path d="M975,112 C997.5,112 997.5,52 1020,52"/>
+                <path d="M975,112 C997.5,112 997.5,182 1020,182"/>
+              </g>
+            </svg>
+
+            <div class="node node-trigger" style="left:10px; top:190px; width:80px; height:50px;" onclick="selectNode('trigger')" data-node="trigger">
+              <span class="node-name" style="font-size:11px;">Trigger</span>
+            </div>
+            <div class="node" style="left:135px; top:80px; width:135px; height:64px;" onclick="selectNode('approve-platform')" data-node="approve-platform">
+              <span class="node-cat-tag" style="background:var(--cat-approval-soft); color:var(--cat-approval);">Approval</span>
+              <div class="node-name">Platform leads</div><div class="node-kind">approval &middot; v1</div>
+            </div>
+            <div class="node" style="left:135px; top:270px; width:135px; height:64px;" onclick="selectNode('approve-security')" data-node="approve-security">
+              <span class="node-cat-tag" style="background:var(--cat-approval-soft); color:var(--cat-approval);">Approval</span>
+              <div class="node-name">Security review</div><div class="node-kind">approval &middot; v1</div>
+            </div>
+            <div class="node" style="left:315px; top:175px; width:120px; height:56px;" onclick="selectNode('bothApproved')" data-node="bothApproved">
+              <span class="node-cat-tag" style="background:var(--cat-control-soft); color:var(--cat-control);">Control</span>
+              <div class="node-name" style="font-size:11.5px;">Both approved?</div>
+            </div>
+            <div class="node" style="left:480px; top:80px; width:130px; height:64px;" onclick="selectNode('buildJson')" data-node="buildJson">
+              <span class="node-cat-tag" style="background:var(--cat-action-soft); color:var(--cat-action);">Action</span>
+              <div class="node-name">buildJson</div><div class="node-kind">transform.jsonBuild</div>
+            </div>
+            <div class="node" style="left:480px; top:270px; width:140px; height:64px; opacity:.8;" onclick="selectNode('notifyRejected')" data-node="notifyRejected">
+              <span class="node-cat-tag" style="background:var(--cat-action-soft); color:var(--cat-action);">Action</span>
+              <div class="node-name">notifyRejected</div><div class="node-kind">email.send</div>
+            </div>
+            <div class="node" style="left:655px; top:80px; width:120px; height:64px;" onclick="selectNode('commit')" data-node="commit">
+              <span class="node-cat-tag" style="background:var(--cat-action-soft); color:var(--cat-action);">Action</span>
+              <div class="node-name">commit</div><div class="node-kind">github.commit</div>
+            </div>
+            <div class="node" style="left:820px; top:80px; width:155px; height:64px;" onclick="selectNode('awaitWorkflowRun')" data-node="awaitWorkflowRun">
+              <span class="node-cat-tag" style="background:var(--cat-loop-soft); color:var(--cat-loop);">Loop</span>
+              <div class="node-name">awaitWorkflowRun</div><div class="node-kind">github.awaitWorkflowRun</div>
+            </div>
+            <div class="node" style="left:1020px; top:20px; width:130px; height:64px;" onclick="selectNode('notify')" data-node="notify">
+              <span class="node-cat-tag" style="background:var(--cat-action-soft); color:var(--cat-action);">Action</span>
+              <div class="node-name">notify</div><div class="node-kind">email.send</div>
+            </div>
+            <div class="node" style="left:1020px; top:150px; width:150px; height:64px; opacity:.85;" onclick="selectNode('notifyDeployFailed')" data-node="notifyDeployFailed">
+              <span class="node-cat-tag" style="background:var(--cat-action-soft); color:var(--cat-action);">Action</span>
+              <div class="node-name">notifyDeployFailed</div><div class="node-kind">email.send</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="inspector">
+          <div class="insp-head">
+            <div class="field-label">Selected node</div>
+            <div id="insp-name" style="font:650 15px/1.3 'IBM Plex Sans',sans-serif; color:var(--ink);">commit</div>
+            <div id="insp-kind" class="mono" style="font-size:11px; color:var(--ink-faint); margin-top:3px;">action.github.commit &middot; v1</div>
+          </div>
+          <div id="insp-body"><!-- filled by JS --></div>
+        </div>
+      </div>
+
+      <!-- ============ RUN VIEW ============ -->
+      <div class="view" id="view-run">
+        <div class="col" style="flex:1; min-width:0;">
+          <div class="canvas-wrap run-canvas">
+            <div class="canvas-inner">
+              <svg width="1210" height="400" style="position:absolute; left:0; top:0; overflow:visible;">
+                <defs>
+                  <marker id="arrowDone" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--ink)"/></marker>
+                  <marker id="arrowPend" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--ink-faint)"/></marker>
+                </defs>
+                <path d="M90,215 C112.5,215 112.5,112 135,112" stroke="var(--ink)" stroke-width="1.8" fill="none" marker-end="url(#arrowDone)"/>
+                <path d="M90,215 C112.5,215 112.5,302 135,302" stroke="var(--ink)" stroke-width="1.8" fill="none" marker-end="url(#arrowDone)"/>
+                <path d="M270,112 C292.5,112 292.5,203 315,203" stroke="var(--ink)" stroke-width="1.8" fill="none" marker-end="url(#arrowDone)"/>
+                <path d="M270,302 C292.5,302 292.5,203 315,203" stroke="var(--ink)" stroke-width="1.8" fill="none" marker-end="url(#arrowDone)"/>
+                <path d="M435,203 C457.5,203 457.5,112 480,112" stroke="var(--ink)" stroke-width="1.8" fill="none" marker-end="url(#arrowDone)"/>
+                <path d="M435,203 C457.5,203 457.5,302 480,302" stroke="var(--ink-faint)" stroke-width="1.8" stroke-dasharray="4 4" fill="none" marker-end="url(#arrowPend)"/>
+                <path d="M610,112 C632.5,112 632.5,112 655,112" stroke="var(--ink)" stroke-width="1.8" fill="none" marker-end="url(#arrowDone)"/>
+                <path d="M775,112 C797.5,112 797.5,112 820,112" stroke="var(--ink)" stroke-width="1.8" fill="none" marker-end="url(#arrowDone)"/>
+                <path d="M975,112 C997.5,112 997.5,52 1020,52" stroke="var(--ink-faint)" stroke-width="1.8" stroke-dasharray="4 4" fill="none" marker-end="url(#arrowPend)"/>
+                <path d="M975,112 C997.5,112 997.5,182 1020,182" stroke="var(--ink-faint)" stroke-width="1.8" stroke-dasharray="4 4" fill="none" marker-end="url(#arrowPend)"/>
+              </svg>
+
+              <div class="node node-trigger" style="left:10px; top:190px; width:80px; height:50px; background:var(--ok);">
+                <span class="node-name" style="font-size:11px;">Trigger</span>
+              </div>
+              <div class="node" style="left:135px; top:80px; width:135px; height:64px; border-color:var(--ok);">
+                <span class="status-pill" style="background:var(--ok-soft); color:var(--ok);"><span class="dot" style="background:var(--ok);"></span>Done</span>
+                <div class="node-name">Platform leads</div><div class="node-kind">approval &middot; v1</div>
+              </div>
+              <div class="node" style="left:135px; top:270px; width:135px; height:64px; border-color:var(--ok);">
+                <span class="status-pill" style="background:var(--ok-soft); color:var(--ok);"><span class="dot" style="background:var(--ok);"></span>Done</span>
+                <div class="node-name">Security review</div><div class="node-kind">approval &middot; v1</div>
+              </div>
+              <div class="node" style="left:315px; top:175px; width:120px; height:56px; border-color:var(--ok);">
+                <span class="status-pill" style="background:var(--ok-soft); color:var(--ok);"><span class="dot" style="background:var(--ok);"></span>Done</span>
+                <div class="node-name" style="font-size:11.5px;">Both approved?</div>
+              </div>
+              <div class="node" style="left:480px; top:80px; width:130px; height:64px; border-color:var(--ok);">
+                <span class="status-pill" style="background:var(--ok-soft); color:var(--ok);"><span class="dot" style="background:var(--ok);"></span>Done</span>
+                <div class="node-name">buildJson</div><div class="node-kind">transform.jsonBuild</div>
+              </div>
+              <div class="node" style="left:480px; top:270px; width:140px; height:64px; border-style:dashed; opacity:.65;">
+                <span class="status-pill" style="background:var(--pend-soft); color:var(--pend);">Skipped</span>
+                <div class="node-name">notifyRejected</div><div class="node-kind">email.send</div>
+              </div>
+              <div class="node" style="left:655px; top:80px; width:120px; height:64px; border-color:var(--ok);">
+                <span class="status-pill" style="background:var(--ok-soft); color:var(--ok);"><span class="dot" style="background:var(--ok);"></span>Done</span>
+                <div class="node-name">commit</div><div class="node-kind">github.commit</div>
+              </div>
+              <div class="node" style="left:820px; top:80px; width:155px; height:64px; border-width:1.5px; border-color:var(--info); box-shadow:0 0 0 3px var(--info-soft);">
+                <span class="status-pill" style="background:var(--info-soft); color:var(--info);"><span class="dot" style="background:var(--info);"></span>Running</span>
+                <div class="node-name">awaitWorkflowRun</div><div class="node-kind">phase: watching</div>
+              </div>
+              <div class="node" style="left:1020px; top:20px; width:130px; height:64px; border-style:dashed; opacity:.65;">
+                <span class="status-pill" style="background:var(--pend-soft); color:var(--pend);">Pending</span>
+                <div class="node-name">notify</div><div class="node-kind">email.send</div>
+              </div>
+              <div class="node" style="left:1020px; top:150px; width:150px; height:64px; border-style:dashed; opacity:.65;">
+                <span class="status-pill" style="background:var(--pend-soft); color:var(--pend);">Pending</span>
+                <div class="node-name">notifyDeployFailed</div><div class="node-kind">email.send</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="run-lower">
+            <div class="tabs">
+              <button class="tab-btn" id="tab-details" onclick="setRunTab('details')">Details</button>
+              <button class="tab-btn" id="tab-audit" onclick="setRunTab('audit')">Audit Trail</button>
+            </div>
+            <div id="run-panel-details" style="display:none; padding:20px; overflow-y:auto;">
+              <div style="font:650 13px/1 'IBM Plex Sans',sans-serif; margin-bottom:16px;">awaitWorkflowRun <span class="mono" style="font-weight:400; color:var(--ink-faint); font-size:11px;">action.github.awaitWorkflowRun &middot; v1</span></div>
+              <div class="stat-grid">
+                <div><div class="stat-label">Status</div><div class="stat-val" style="color:var(--info);">Running</div></div>
+                <div><div class="stat-label">state.phase</div><div class="stat-val mono">watching</div></div>
+                <div><div class="stat-label">GitHub run</div><div><a href="#" style="font-weight:650; text-decoration:none;">#555 &#8599;</a></div></div>
+                <div><div class="stat-label">Last checked</div><div class="stat-val">12s ago</div></div>
+              </div>
+              <div class="stat-label" style="margin-bottom:6px;">Input snapshot</div>
+              <div class="expr-box mono" style="font-size:11.5px;">{ "commitSha": "a1b2c3d4e5f6..." }</div>
+            </div>
+            <div id="run-panel-audit" style="flex:1; overflow-y:auto;">
+              <table>
+                <thead><tr><th style="width:40px;">Seq</th><th style="width:110px;">Time</th><th style="width:150px;">Node</th><th style="width:200px;">Event</th><th>Detail</th></tr></thead>
+                <tbody id="audit-rows"><!-- filled by JS --></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ APPROVALS VIEW ============ -->
+      <div class="view" id="view-approvals">
+        <div class="req-list">
+          <div class="req-list-head">Awaiting your decision</div>
+          <div id="req-pending"><!-- filled by JS --></div>
+          <div class="req-list-head" style="border-top:1px solid var(--line-soft); margin-top:6px;">Recently decided</div>
+          <div class="req-card done">
+            <div class="req-icon" style="background:var(--cat-approval-soft); color:var(--cat-approval);">
+              <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 10.5l3.3 3.3L16 5"/></svg>
+            </div>
+            <div>
+              <div class="req-wf">Decommission staging DB</div>
+              <div class="req-node">DBA approval</div>
+              <div class="req-meta">approved by you &middot; 2h ago</div>
+            </div>
+          </div>
+        </div>
+        <div class="detail-pane">
+          <div class="detail-inner" id="approval-detail"><!-- filled by JS --></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---------------- shared data ---------------- */
+var NODE_CATS = [
+  { key:'trigger',  label:'Trigger',  color:'var(--cat-trigger)',  soft:'var(--cat-trigger-soft)',
+    icon:'<path d="M11 2L4 12h5l-1 6 7-10h-5l1-6z"/>',
+    items:[ {name:'Manual', kind:'trigger.manual'} ] },
+  { key:'approval', label:'Approval', color:'var(--cat-approval)', soft:'var(--cat-approval-soft)',
+    icon:'<path d="M4 10.5l3.3 3.3L16 5" fill="none"/><rect x="2" y="2" width="16" height="16" rx="4" fill="none"/>',
+    items:[ {name:'Approval', kind:'approval'} ] },
+  { key:'control',  label:'Control',  color:'var(--cat-control)',  soft:'var(--cat-control-soft)',
+    icon:'<path d="M3 5h6l2 3h6" fill="none"/><path d="M3 15h6l2-3h6" fill="none"/><circle cx="16" cy="5" r="1.6"/><circle cx="16" cy="15" r="1.6"/>',
+    items:[ {name:'Switch', kind:'control.switch'}, {name:'For Each', kind:'control.forEach'}, {name:'Set Variable', kind:'control.setVariable'} ] },
+  { key:'action',   label:'Action',   color:'var(--cat-action)',   soft:'var(--cat-action-soft)',
+    icon:'<circle cx="10" cy="10" r="7" fill="none"/><path d="M10 6v4l3 2" fill="none"/>',
+    items:[ {name:'Transform', kind:'action.transform.jsonBuild'}, {name:'GitHub Commit', kind:'action.github.commit'}, {name:'Send Email', kind:'action.email.send'} ] },
+  { key:'loop',     label:'Loop',     color:'var(--cat-loop)',     soft:'var(--cat-loop-soft)',
+    icon:'<path d="M4 8a6 6 0 0110-4.2M16 12a6 6 0 01-10 4.2" fill="none"/><path d="M14 2v4h-4M6 18v-4h4" fill="none"/>',
+    items:[ {name:'Poll Until', kind:'control.pollUntil'}, {name:'Await Workflow Run', kind:'action.github.awaitWorkflowRun'} ] },
+  { key:'agentic',  label:'Agentic',  color:'var(--cat-agentic)',  soft:'var(--cat-agentic-soft)',
+    icon:'<path d="M10 2l1.8 4.8L17 8.5l-5.2 1.7L10 15l-1.8-4.8L3 8.5l5.2-1.7z"/>',
+    items:[ {name:'Agent Loop', kind:'agent.loop'} ] },
+  { key:'terminal', label:'Terminal', color:'var(--cat-terminal)', soft:'var(--cat-terminal-soft)',
+    icon:'<rect x="3" y="3" width="14" height="14" rx="3" fill="none"/>',
+    items:[ {name:'Stop', kind:'control.stop'} ] }
+];
+
+var NODE_INFO = {
+  'trigger':          { name:'Trigger', kind:'manual (trigger)', type:'generic' },
+  'approve-platform': { name:'Platform leads approval', kind:'approval · v1', type:'approval', group:'platform-leads', quorum:1 },
+  'approve-security': { name:'Security review approval', kind:'approval · v1', type:'approval', group:'security-review', quorum:2 },
+  'bothApproved':     { name:'Both approved?', kind:'control.switch · v1', type:'generic' },
+  'buildJson':        { name:'buildJson', kind:'action.transform.jsonBuild · v1', type:'generic' },
+  'notifyRejected':   { name:'notifyRejected', kind:'action.email.send · v1', type:'generic' },
+  'commit':           { name:'commit', kind:'action.github.commit · v1', type:'commit' },
+  'awaitWorkflowRun': { name:'awaitWorkflowRun', kind:'action.github.awaitWorkflowRun · v1', type:'await' },
+  'notify':           { name:'notify', kind:'action.email.send · v1', type:'generic' },
+  'notifyDeployFailed': { name:'notifyDeployFailed', kind:'action.email.send · v1', type:'generic' }
+};
+
+var AUDIT_ROWS = [
+  ['1','14:02:00','—','RunStarted','trigger payload validated, bindings resolved','pend'],
+  ['2','14:02:00','approve-platform','Requested','group: platform-leads, quorum 1','pend'],
+  ['3','14:02:00','approve-security','Requested','group: security-review, quorum 2','pend'],
+  ['4','14:02:41','approve-platform','DecisionRecorded','approved by a.khan@company.example','pend'],
+  ['5','14:02:41','approve-platform','QuorumReached','1 of 1 — status → Succeeded','ok'],
+  ['6','14:03:10','approve-security','DecisionRecorded','approved by m.diaz@company.example (1 of 2)','pend'],
+  ['7','14:03:52','approve-security','DecisionRecorded','approved by r.singh@company.example (2 of 2)','pend'],
+  ['8','14:03:52','approve-security','QuorumReached','2 of 2 — status → Succeeded','ok'],
+  ['9','14:03:52','bothApproved','Evaluated','join="all" satisfied — status → Succeeded','ok'],
+  ['10','14:03:53','buildJson','Completed','status → Succeeded','ok'],
+  ['11','14:03:54','commit','Started','PUT contents/deployments/…json','pend'],
+  ['12','14:03:55','commit','Completed','commitSha: a1b2c3d — status → Succeeded','ok'],
+  ['13','14:03:55','awaitWorkflowRun','LocateStarted','state.phase → locating','pend'],
+  ['14','14:04:05','awaitWorkflowRun','LocateProgressed','no run found yet for head_sha','pend'],
+  ['15','14:04:15','awaitWorkflowRun','LocateProgressed','no run found yet for head_sha','pend'],
+  ['16','14:04:25','awaitWorkflowRun','RunLocated','ghRunId 555 — state.phase → watching','pend'],
+  ['17','14:04:55','awaitWorkflowRun','RunProgressed','status: in_progress','pend'],
+  ['18','14:05:25','awaitWorkflowRun','RunProgressed','status: in_progress — most recent','info']
+];
+
+var APPROVALS = {
+  platform: { wf:'Provision Azure Databricks', node:'Platform leads approval', kind:'approval · v1',
+    nodeId:'approve-platform', run:'run-8f21c3f0', group:'platform-leads', quorum:'1 of 3 members', decisions:'0 recorded',
+    trigger:'{\n  "resourceName": "ml-batch-01",\n  "sku": "Standard_DS4_v2",\n  "region": "eastus2",\n  "requestedBy": "sudip@company.com"\n}',
+    cost:'$1,840 / month', age:'4m ago' },
+  security: { wf:'Provision Azure Databricks', node:'Security review approval', kind:'approval · v1',
+    nodeId:'approve-security', run:'run-8f21c3f0', group:'security-review', quorum:'2 of 2 members', decisions:'1 of 2 recorded',
+    trigger:'{\n  "resourceName": "ml-batch-01",\n  "sku": "Standard_DS4_v2",\n  "region": "eastus2",\n  "requestedBy": "sudip@company.com"\n}',
+    cost:'$1,840 / month', age:'4m ago' },
+  cert: { wf:'Rotate signing certificate', node:'Security sign-off', kind:'approval · v1',
+    nodeId:'approve-signoff', run:'run-2c9a41d5', group:'security-review', quorum:'1 of 1 members', decisions:'0 recorded',
+    trigger:'{\n  "certName": "prod-api-signing",\n  "expiresIn": "9 days",\n  "requestedBy": "svc-cert-bot"\n}',
+    cost:'n/a', age:'1h ago' }
+};
+
+/* ---------------- state ---------------- */
+var state = { view:'designer', node:'commit', runTab:'audit', approval:'platform' };
+
+/* ---------------- render: palette ---------------- */
+function renderPalette(){
+  var html = '';
+  NODE_CATS.forEach(function(cat){
+    html += '<div class="palette-cat">' +
+              '<div class="palette-cat-icon" style="background:'+cat.soft+'; color:'+cat.color+';">' +
+                '<svg width="10" height="10" viewBox="0 0 20 20" fill="currentColor" stroke="currentColor" stroke-width="1.6">'+cat.icon+'</svg>' +
+              '</div>' +
+              '<div class="palette-cat-label" style="color:'+cat.color+';">'+cat.label+'</div>' +
+            '</div>';
+    cat.items.forEach(function(it){
+      html += '<div class="palette-item">' +
+                '<div class="palette-item-icon" style="background:'+cat.soft+'; color:'+cat.color+';">' +
+                  '<svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor" stroke="currentColor" stroke-width="1.6">'+cat.icon+'</svg>' +
+                '</div>' +
+                '<div><div class="palette-item-name">'+it.name+'</div><div class="palette-item-kind">'+it.kind+'</div></div>' +
+                '<svg class="palette-item-handle" width="12" height="12" viewBox="0 0 20 20" fill="currentColor"><circle cx="6" cy="5" r="1.6"/><circle cx="14" cy="5" r="1.6"/><circle cx="6" cy="10" r="1.6"/><circle cx="14" cy="10" r="1.6"/><circle cx="6" cy="15" r="1.6"/><circle cx="14" cy="15" r="1.6"/></svg>' +
+              '</div>';
+    });
+  });
+  document.getElementById('palette-body').innerHTML = html;
+}
+
+/* ---------------- render: designer inspector + node selection ---------------- */
+function selectNode(id){
+  state.node = id;
+  document.querySelectorAll('#view-designer .node').forEach(function(el){
+    el.classList.toggle('sel', el.getAttribute('data-node') === id);
+  });
+  var info = NODE_INFO[id];
+  document.getElementById('insp-name').textContent = info.name;
+  document.getElementById('insp-kind').textContent = info.kind;
+
+  var body = '';
+  if (info.type === 'approval'){
+    body += '<div class="insp-section"><div class="insp-section-title">Configuration</div>' +
+              '<div class="field-label" style="margin-top:2px;">Group</div>' +
+              '<select class="select-field" style="margin-bottom:12px;"><option>'+info.group+'</option></select>' +
+              '<div class="field-label">Quorum</div>' +
+              '<input class="select-field" value="'+info.quorum+'" readonly></div>' +
+            '<div class="insp-section"><div class="insp-section-title">About this kind</div>' +
+              '<div class="help-text">Single-group sign-off gate. Multi-group approval composes several of these with a downstream switch — see "Both approved?".</div></div>';
+  } else if (info.type === 'commit'){
+    body += '<div class="insp-section"><div class="insp-section-title">Inputs</div>' +
+              '<div class="field-label"><span class="fx-chip">fx</span>Branch</div>' +
+              '<div class="expr-box" style="margin-bottom:10px;">$vars.run.deploymentBranch</div>' +
+              '<div class="field-label"><span class="fx-chip">fx</span>Path</div>' +
+              '<div class="expr-box" style="margin-bottom:10px;">\'deployments/\' &amp; $trigger.resourceName &amp; \'-\' &amp; $context.runId &amp; \'.json\'</div>' +
+              '<div class="field-label"><span class="fx-chip">fx</span>Content</div>' +
+              '<div class="expr-box">$node(\'buildJson\').output</div></div>' +
+            '<div class="insp-section"><div class="insp-section-title">Connections</div>' +
+              '<div class="field-label">repo</div><select class="select-field"><option>github-deploy</option></select></div>' +
+            '<div class="insp-section"><div class="insp-section-title">Policies</div>' +
+              '<div class="kv-row"><span class="k">Retry</span><span class="v">3 attempts, exponential</span></div>' +
+              '<div class="kv-row"><span class="k">Initial delay</span><span class="v">15s</span></div>' +
+              '<div class="kv-row"><span class="k">Timeout</span><span class="v">60s</span></div></div>';
+  } else if (info.type === 'await'){
+    body += '<div class="insp-section"><div class="insp-section-title">Inputs</div>' +
+              '<div class="field-label"><span class="fx-chip">fx</span>commitSha</div>' +
+              '<div class="expr-box">$node(\'commit\').output.commitSha</div></div>' +
+            '<div class="insp-section"><div class="insp-section-title">Connections</div>' +
+              '<div class="field-label">repo</div><select class="select-field"><option>github-deploy</option></select></div>' +
+            '<div class="insp-section"><div class="insp-section-title">Config — locate phase</div>' +
+              '<div class="kv-row"><span class="k">Interval</span><span class="v">10s</span></div>' +
+              '<div class="kv-row"><span class="k">Max duration</span><span class="v">5 min</span></div></div>' +
+            '<div class="insp-section"><div class="insp-section-title">Config — await phase</div>' +
+              '<div class="kv-row"><span class="k">Interval</span><span class="v">30s</span></div>' +
+              '<div class="kv-row"><span class="k">Max duration</span><span class="v">30 min</span></div></div>';
+  } else {
+    body += '<div class="insp-section"><div class="insp-section-title">Inputs</div>' +
+              '<div class="help-text">This panel is generated from the node kind\'s own schema — every field\'s type, label, description, and default come straight from the registry entry.</div></div>' +
+            '<div class="insp-section"><div class="help-text" style="color:var(--ink-faint);">Select "Platform leads", "commit", or "awaitWorkflowRun" on the canvas for a fully filled-in example.</div></div>';
+  }
+  document.getElementById('insp-body').innerHTML = body;
+}
+
+/* ---------------- render: run audit table ---------------- */
+function renderAudit(){
+  var dotColor = { pend:'var(--pend)', ok:'var(--ok)', info:'var(--info)' };
+  var html = '';
+  AUDIT_ROWS.forEach(function(r){
+    html += '<tr><td class="t">'+r[0]+'</td><td class="t">'+r[1]+'</td><td class="n">'+r[2]+'</td>' +
+            '<td><span class="dot" style="background:'+dotColor[r[5]]+';"></span> '+r[3]+'</td><td>'+r[4]+'</td></tr>';
+  });
+  document.getElementById('audit-rows').innerHTML = html;
+}
+
+function setRunTab(tab){
+  state.runTab = tab;
+  document.getElementById('tab-details').classList.toggle('active', tab === 'details');
+  document.getElementById('tab-audit').classList.toggle('active', tab === 'audit');
+  document.getElementById('run-panel-details').style.display = tab === 'details' ? 'block' : 'none';
+  document.getElementById('run-panel-audit').style.display = tab === 'audit' ? 'flex' : 'none';
+}
+
+/* ---------------- render: approvals ---------------- */
+function renderApprovalList(){
+  var checkIcon = '<path d="M4 10.5l3.3 3.3L16 5" fill="none"/>';
+  var order = ['platform','security','cert'];
+  var meta = {
+    platform: {icon:'var(--cat-approval)', soft:'var(--cat-approval-soft)'},
+    security: {icon:'var(--cat-approval)', soft:'var(--cat-approval-soft)'},
+    cert: {icon:'var(--cat-approval)', soft:'var(--cat-approval-soft)'}
+  };
+  var html = '';
+  order.forEach(function(id){
+    var a = APPROVALS[id];
+    var sel = state.approval === id ? ' sel' : '';
+    html += '<div class="req-card'+sel+'" onclick="selectApproval(\''+id+'\')">' +
+              '<div class="req-icon" style="background:'+meta[id].soft+'; color:'+meta[id].icon+';">' +
+                '<svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2">'+checkIcon+'</svg></div>' +
+              '<div><div class="req-wf">'+a.wf+'</div>' +
+              '<div class="req-node">'+a.node+' &middot; quorum '+a.decisions.split(' ')[0]+' recorded, needs '+a.quorum+'</div>' +
+              '<div class="req-meta">'+a.run+' &middot; requested '+a.age+'</div></div></div>';
+  });
+  document.getElementById('req-pending').innerHTML = html;
+}
+
+function selectApproval(id){
+  state.approval = id;
+  renderApprovalList();
+  var a = APPROVALS[id];
+  var html =
+    '<div class="insp-section" style="border-bottom:1px solid var(--line); padding-left:0; padding-right:0;">' +
+      '<div class="field-label">'+a.wf+'</div>' +
+      '<div style="font:650 18px/1.3 \'IBM Plex Sans\',sans-serif; color:var(--ink);">'+a.node+'</div>' +
+      '<div class="mono" style="font-size:11px; color:var(--ink-faint); margin-top:4px;">'+a.kind+' &middot; node id <b>'+a.nodeId+'</b> &middot; run <b>'+a.run+'</b></div>' +
+    '</div>' +
+    '<div class="insp-section" style="padding-left:0; padding-right:0;">' +
+      '<div class="insp-section-title">Group &amp; quorum</div>' +
+      '<div class="kv-row"><span class="k">Approver group</span><span class="v">'+a.group+'</span></div>' +
+      '<div class="kv-row"><span class="k">Quorum policy</span><span class="v">'+a.quorum+'</span></div>' +
+      '<div class="kv-row"><span class="k">Decisions so far</span><span class="v">'+a.decisions+'</span></div>' +
+    '</div>' +
+    '<div class="insp-section" style="padding-left:0; padding-right:0;">' +
+      '<div class="insp-section-title">Context for this decision</div>' +
+      '<div class="field-label"><span class="fx-chip">fx</span>$trigger</div>' +
+      '<div class="expr-box" style="margin-bottom:10px; white-space:pre;">'+a.trigger+'</div>' +
+      '<div class="field-label"><span class="fx-chip">fx</span>$vars.run.estimatedMonthlyCost</div>' +
+      '<div class="expr-box">'+a.cost+'</div>' +
+    '</div>' +
+    '<div class="insp-section" style="padding-left:0; padding-right:0; border-bottom:none;">' +
+      '<div class="insp-section-title">Your decision</div>' +
+      '<textarea class="comment" placeholder="Add an optional comment&hellip;"></textarea>' +
+      '<div style="display:flex; gap:10px;">' +
+        '<button class="btn btn-ok" style="flex:1;">Approve</button>' +
+        '<button class="btn btn-reject" style="flex:1;">Reject</button>' +
+      '</div>' +
+      '<div style="font-size:11px; color:var(--ink-faint); margin-top:10px; line-height:1.5;">Recorded as an <span class="mono">ApprovalDecisionRecorded</span> event on the run\'s audit trail. Once quorum is met, the node emits its terminal <span class="mono">Approved</span> or <span class="mono">Rejected</span> event and downstream nodes evaluate.</div>' +
+    '</div>';
+  document.getElementById('approval-detail').innerHTML = html;
+}
+
+/* ---------------- view switching ---------------- */
+function setView(v){
+  state.view = v;
+  document.querySelectorAll('.rail-btn[data-view]').forEach(function(el){
+    el.classList.toggle('active', el.getAttribute('data-view') === v);
+  });
+  ['designer','run','approvals'].forEach(function(name){
+    document.getElementById('view-'+name).classList.toggle('active', name === v);
+    document.getElementById('topbar-'+name).style.display = name === v ? 'flex' : 'none';
+  });
+}
+
+/* ---------------- init ---------------- */
+renderPalette();
+selectNode('commit');
+renderAudit();
+setRunTab('audit');
+renderApprovalList();
+selectApproval('platform');
+setView('designer');
+</script>
+</body>
+</html>
