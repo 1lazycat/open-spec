@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Draft v1.0 — reviewed, scenario walked through end to end |
-| **Owner** | enxent |
+| **Status** | Draft v1.2 — reviewed, scenario walked through end to end |
+| **Owner** | Platform Engineering |
 | **Audience** | Backend/platform developers, solution architects |
 | **Reference scenario** | Azure Databricks provisioning via GitHub Actions deployment |
 
@@ -135,7 +135,105 @@ erDiagram
 
 The event log is what makes the Engine debuggable and resumable without being a full event-sourced system: `node_execution` is always the current-state view an Engine instance queries to decide what to do next; `event` is the immutable trail a human reads to answer "what happened, and when."
 
-**Audit trail completeness.** Every event is captured here — terminal or not, whether raised by a node kind's executor (§6.2: `Checked`, `DecisionRecorded`, `RunProgressed`, and every other non-terminal event, not only the ones that resolve a node) or by the Engine itself (`RunStarted`, `NodeReady`, `ApprovalRequested`, `VariableSet`, `StopRequested`). Rows are appended only — nothing is ever updated in place or deleted. The Audit Trail screen (§14.5) is a direct, unfiltered read of this table ordered by `sequence`; nothing that happens during a run is invisible to it.
+**Audit trail completeness.** Every event is captured here — terminal or not, whether raised by a node kind's executor (§6.2's full catalogue: `Checked`, `DecisionRecorded`, `RunProgressed`, and every other non-terminal event, not only the ones that resolve a node) or by the Engine's own orchestration (`RunStarted`, `NodeReady`, `StopRequested` — events with no owning kind, because they describe the run itself rather than one node's work). This isn't a policy the executor has to remember to follow: the dispatch loop in §6.3 appends whatever the executor returned to the event log *before* it even checks whether that event is terminal, so there's no code path that produces an event without logging it. Rows are appended only — nothing is ever updated in place or deleted. The Audit Trail screen (§14.5) is a direct, unfiltered read of this table ordered by `sequence`; nothing that happens during a run is invisible to it.
+
+### workflow
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid | Primary key — stable across every version. |
+| `name` | text | Display name shown in the Catalogue (§14.6). |
+| `owner` | text | Team or user of record; who Publish/Archive permissions check against. |
+| `created_at` | timestamptz | |
+
+### variable
+
+| Column | Type | Notes |
+|---|---|---|
+| `scope` | enum | `global` / `run` / `iteration` (§5.2) — `trigger` is never stored here, it's read straight off `workflow_run.trigger_payload`. |
+| `scope_id` | text | What the scope resolves against: null for `global`, `run_id` for `run`, `run_id:node_id:iteration_key` for `iteration`. |
+| `name` | text | Together with `scope`/`scope_id`, the natural key. |
+| `value` | jsonb | Current value. |
+| `access` | enum | `ro` / `rw`, copied from the declaration at the point the value was first set — publish-time validation (§5.2) is what actually stops a `ro` write, this is just what a reader sees. |
+| `updated_at` | timestamptz | |
+| `updated_by_node_execution_id` | uuid | FK to `node_execution` — which `control.setVariable` (or engine-internal) write last changed this value. |
+
+Every row here is the *current* value only — the full history of who changed a variable and when is the `event` table's `VariableSet` rows (§6.2), keyed by the same `scope`/`scope_id`/`name` in their `payload`, not a separate history table. "Current state" and "history" stay one system instead of two that can drift.
+
+### connection
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid | Primary key. |
+| `type` | text | e.g. `github`, `smtp` — what a node's `connections` role requirement is checked against. |
+| `type_version` | int | See §16.4 — connection types version the same way node kinds do. |
+| `name` | text | Human label shown in the Connections tab (§14.1). |
+| `metadata` | jsonb | Non-secret configuration (e.g. a GitHub App's installation id). |
+| `secret_ref` | text | Key Vault reference — the secret material itself never enters Postgres. |
+
+### connection_binding
+
+| Column | Type | Notes |
+|---|---|---|
+| `workflow_id` | uuid | FK to workflow. |
+| `alias` | text | The name a workflow's `connections` declaration and its nodes' `connections` maps reference (§5.5). |
+| `environment` | text | `dev` / `staging` / `prod`, … — what makes the same published JSON promote untouched (§9). |
+| `connection_id` | uuid | FK to connection. |
+
+### node_kind_definition
+
+| Column | Type | Notes |
+|---|---|---|
+| `kind` | text | e.g. `action.github.commit` — together with `version`, the primary key. |
+| `version` | int | See §16.4 for what forces a bump. |
+| `category` | text | Palette grouping (§6.1). |
+| `input_schema` / `output_schema` / `config_schema` | jsonb | Each built from the §5.1 field shape — this is the registry entry §6.4 documents per kind. |
+| `connection_roles` | jsonb | Named roles this kind requires (§5.5) — zero, one, or several. |
+| `default_policies` | jsonb | `retry`/`timeout` defaults (§10) a node instance can override. |
+| `events` | jsonb | The full event catalogue for this kind (§6.2) — `type`, `terminal`, `resultStatus`, `description`. |
+| `deprecated` | boolean | See §16.4 — blocks new usage, never affects already-published workflows. |
+| `deprecated_message` | text | Shown in the Designer when an author opens a node already on a deprecated version. |
+
+### approval_group
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | text | e.g. `platform-leads` — this is the `groupId` an `approval` node's `config` references (§6.4). |
+| `name` | text | Display name. |
+| `description` | text | Shown to approvers for context on what this group is trusted to sign off on. |
+
+### approval_group_member
+
+| Column | Type | Notes |
+|---|---|---|
+| `group_id` | text | FK to approval_group. |
+| `member_type` | enum | `human` or `agent` — see §8.1's agent-evaluated approvals. |
+| `identity` | text | Email for a `human` member; a connection alias (resolving to the model/agent connector) for an `agent` member. |
+| `auto_decide` | boolean | Only meaningful for `agent` members — `true` means the Engine invokes this member's decision inline when a request is created (§8.1); `false` means the agent is expected to self-poll `GET /approvals/pending` on its own schedule, exactly like a human's client would. |
+
+### approval_request
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid | Primary key — what `POST /approvals/{id}/decision` addresses. |
+| `node_execution_id` | uuid | FK to node_execution — the specific `approval` node instance this request belongs to. |
+| `group_id` | text | FK to approval_group. |
+| `quorum` | int | Copied from the node's `config.quorum` at request-creation time. |
+| `decision_instructions` | text | Resolved (JSONata-evaluated) copy of the node's `config.decisionInstructions` (§8.1) — the guidance a human sees inline and an agent member reads as its decision policy. Snapshotted here, not re-resolved per read, so what an approver acted on is exactly what the audit trail can show later. |
+| `status` | enum | `Pending` / `QuorumReached` / `Rejected` / `TimedOut` — mirrors the node's own terminal events (§6.2). |
+| `created_at` | timestamptz | |
+
+### approval_decision
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid | Primary key. |
+| `request_id` | uuid | FK to approval_request. |
+| `member_id` | text | Which approval_group_member decided. |
+| `decided_by_type` | enum | `human` or `agent`, copied from the member at decision time — what the Audit Trail (§14.5) and the event's `payload` both surface, so "an agent approved this" is never ambiguous after the fact. |
+| `decision` | enum | `approve` / `reject`. |
+| `comment` | text | Optional for a human; for an `auto_decide` agent this is where its rationale is recorded (§8.1). |
+| `decided_at` | timestamptz | |
 
 ---
 
@@ -349,6 +447,7 @@ A node in a workflow definition is a reference, not a description — the contra
 
 | Category | Example kind | Purpose |
 |---|---|---|
+| trigger | `trigger.manual` | Workflow entry point. Not a `node_execution` — its lifecycle is the single workflow-level `RunStarted` event (§4), since there's nothing for it to execute against. |
 | action | `action.github.commit` | Single unit of work against a connector. |
 | approval | `approval` | Single-group sign-off gate. Multi-group approval composes several of these (§8.1). |
 | control | `control.switch` | No-op branch point: a `join` policy plus guarded `next` entries. |
@@ -365,14 +464,69 @@ Every registry entry declares: an input schema, output schema, and optional conf
 
 A kind's manifest declares the events it can raise, and which of those are **terminal** — the ones that resolve the node to a final status and let the Engine move on to its `next` list. Not every non-terminal event is inert: some move the node through internal phases without the graph ever seeing it.
 
-| Kind | Events it raises | Terminal events → status |
-|---|---|---|
-| `action.*` | Started, Completed, Errored | Completed→Succeeded, Errored→Failed |
-| `approval` | Requested, DecisionRecorded, QuorumReached, Rejected | QuorumReached→Succeeded, Rejected→Failed |
-| `control.pollUntil` | Started, Checked, ConditionMet, ConditionFailed, MaxDurationExceeded | ConditionMet→Succeeded, ConditionFailed / MaxDurationExceeded→Failed |
-| `control.switch` | Evaluated | Evaluated→Succeeded |
-| `agent.loop` | Started, IterationStarted, ToolInvoked, IterationCompleted, StoppedByModel, MaxIterationsExceeded, MaxCostExceeded, TimedOut | StoppedByModel→Succeeded, everything else terminal→Failed |
-| `action.github.awaitWorkflowRun` | LocateStarted, LocateProgressed, RunLocated, LocateTimedOut, RunProgressed, RunSucceeded, RunFailed, AwaitTimedOut | RunSucceeded→Succeeded, every other terminal event→Failed |
+Each event in the manifest uses the same descriptive shape as everything else in this spec (§5.1) — a `type`, whether it's `terminal`, the `resultStatus` it maps to when it is, and a plain-language `description`. This is what a workflow author actually sees while building: the Designer's node inspector (§14.1) renders this catalogue for whatever node is selected, so "what can this node do, and what does each of those outcomes mean" is answered without reading the executor's source. `GET /node-kinds` returns exactly this shape:
+
+```json
+{
+  "kind": "approval", "version": 1,
+  "events": [
+    { "type": "Requested", "terminal": false,
+      "description": "The request was created and every member of the approver group was notified." },
+    { "type": "DecisionRecorded", "terminal": false,
+      "description": "One approver recorded a decision. Emitted once per decision; quorum may not yet be met." },
+    { "type": "QuorumReached", "terminal": true, "resultStatus": "Succeeded",
+      "description": "Enough approve decisions were recorded to satisfy the configured quorum." },
+    { "type": "Rejected", "terminal": true, "resultStatus": "Failed",
+      "description": "An approver rejected the request under a policy where any rejection fails the node immediately." }
+  ]
+}
+```
+
+**Full catalogue, every kind.** This is the source of truth both for what the inspector renders and for what the Audit Trail (§14.5) can ever show — nothing reaches the `event` table under a name that isn't listed here.
+
+| Kind | Event | Terminal → status | Description |
+|---|---|---|---|
+| `action.*` (`github.commit`, `email.send`, `transform.jsonBuild`) | `Started` | no | The connector call — or, for `jsonBuild`, the template evaluation — began. |
+| | `Completed` | → Succeeded | The unit of work finished normally; `output` is the connector's (or transform's) result. |
+| | `Errored` | → Failed | The call failed or the expression threw. `policies.retry` (§10) governs whether this is retried before the node's status is set. |
+| `approval` | `Requested` | no | The request was created and every member of the approver group was notified. |
+| | `DecisionRecorded` | no | One approver recorded a decision. Emitted once per decision; quorum may not yet be met. |
+| | `QuorumReached` | → Succeeded | Enough approve decisions were recorded to satisfy the configured quorum. |
+| | `Rejected` | → Failed | An approver rejected under a policy where any rejection fails the node immediately. |
+| `control.switch` | `Evaluated` | → Succeeded | Branch expressions were evaluated against current outputs/variables and a matching (or default) branch was selected. |
+| `control.forEach` | `IterationStarted` | no | A new iteration began for the next item in the source array. |
+| | `IterationCompleted` | no | One iteration's sub-branch finished; its result was recorded. |
+| | `Completed` | → Succeeded | Every iteration finished (or was skipped); results were collected into `output`. |
+| | `Errored` | → Failed | An iteration failed under a fail-fast policy, stopping the remaining iterations. |
+| `control.setVariable` | `VariableSet` | → Succeeded | The named variable was written in its declared scope. A matching row is also appended to that variable's own change history, independent of which node made the change (§8.3). |
+| `control.pollUntil` | `Started` | no | The first check of the configured condition ran. |
+| | `Checked` | no | A scheduled recheck ran; the condition was not yet satisfied. |
+| | `ConditionMet` | → Succeeded | The configured condition evaluated true. |
+| | `ConditionFailed` | → Failed | The condition evaluated to an explicit failure state — not merely "not yet." |
+| | `MaxDurationExceeded` | → Failed | The condition never became true before the node's configured max duration elapsed. |
+| `control.stop` | `Terminated` | ends the **run**, not just this node | Execution reached this node; the run was ended immediately with the configured status and every other in-flight node was marked `Skipped`. |
+| `action.github.awaitWorkflowRun` | `LocateStarted` | no | Began polling GitHub's list-runs endpoint for a run matching this commit's `head_sha`. |
+| | `LocateProgressed` | no | A locate-phase check ran; no matching run was found yet. |
+| | `RunLocated` | no (phase-changing) | A run matching `head_sha` was found; switched from the locating phase to the watching phase. |
+| | `LocateTimedOut` | → Failed | No matching run appeared before the locate phase's own max duration elapsed. |
+| | `RunProgressed` | no | A watch-phase check ran; the run is still in progress. |
+| | `RunSucceeded` | → Succeeded | The located run completed with a successful conclusion. |
+| | `RunFailed` | → Failed | The located run completed with a failing conclusion. |
+| | `AwaitTimedOut` | → Failed | The run never reached a terminal conclusion before the watch phase's own max duration elapsed. |
+| `agent.loop` | `Started` | no | The loop began; the agent received its goal and tool definitions. |
+| | `IterationStarted` | no | A new reasoning turn began. |
+| | `ToolInvoked` | no | The agent called one of its available tools; the result is fed back into its next turn. |
+| | `IterationCompleted` | no | A reasoning turn finished; the running transcript was updated. |
+| | `StoppedByModel` | → Succeeded | The agent determined its goal was satisfied and returned a final result. |
+| | `MaxIterationsExceeded` | → Failed | The configured iteration cap was reached without the agent stopping itself. |
+| | `MaxCostExceeded` | → Failed | The configured token/cost budget was exhausted before the agent stopped itself. |
+| | `TimedOut` | → Failed | `policies.timeout` elapsed before the agent stopped itself. |
+| `trigger.manual` | `RunStarted` | workflow-level, not node-terminal | The trigger payload was validated against `payloadSchema` and connection bindings were resolved for this environment; the run begins. `nodeId` is empty on this row — see §4. |
+
+Two things worth calling out explicitly:
+
+- **Not every kind needs its own timeout event.** A plain `action.*` node relies on the generic, Engine-enforced `policies.timeout` (§10) — the Engine itself fails the node and logs it, with no participation from the kind's executor. `control.pollUntil` and `action.github.awaitWorkflowRun` are the exception: they manage more than one internal phase, each potentially with its own duration budget, so *they* own naming and raising their own timeout events (`MaxDurationExceeded`, `LocateTimedOut`, `AwaitTimedOut`) instead of relying on one node-level timeout that couldn't tell the phases apart.
+- **`control.stop` is the one kind whose terminal event isn't scoped to the node.** Every other terminal event resolves that node and lets the Engine evaluate `next` from there. `Terminated` instead reaches into the `workflow_run` row directly and marks every other still-pending `node_execution` in the run `Skipped` — it's a deliberate early exit for the whole run, authored into the graph, as distinct from the external `POST /runs/{runId}/stop` (§8.3, §11) as a Logic Apps "Terminate" action is from an operator killing a job.
 
 `control.pollUntil` is for a single condition against a single value — "wait until this variable changes," "wait until this timestamp passes." It stops being the right tool the moment a wait has more than one distinct phase, or needs real API-specific knowledge to run (like the head_sha correlation in §13.2) — that's when it earns its own kind instead of being contorted into `checkExpression` strings nobody can read. Either way it's still **one node** in the graph: the phases live inside the kind's own state machine, never as a second node.
 
@@ -408,6 +562,114 @@ The distinction that matters: `state` is scratch space only the kind's own execu
 | T+110s | RunSucceeded | **yes** | watching | Succeeded | set output, evaluate next — `notify` becomes eligible |
 
 `RunLocated` is the one people expect to be terminal and isn't — it changes something real (the phase, the polling cadence, which GitHub endpoint the next check even calls) without resolving the node. That's the point of giving a kind its own phases: the graph only ever sees one thing happen to this node, at T+110s.
+
+### 6.4 Full manifest reference, every kind
+
+§6.1–§6.2 describe the registry in the abstract; this is what `node_kind_definition` (§4) actually holds for each kind today — every config/input field (in the §5.1 shape), what the terminal output looks like, which connection roles it needs, and its default policies. This is the table the Designer's node inspector (§14.1) renders from, field for field.
+
+**`trigger.manual`** — not a `node_execution`, so it has no config/input/output/connections/policies of its own; what a trigger declares is entirely `trigger.payloadSchema` (§5.6), which is author-defined per workflow, not fixed by this kind.
+
+**`approval`**
+
+| Field | In | Type | Required / default | Description |
+|---|---|---|---|---|
+| `groupId` | config | string | required | Which `approval_group` (§4) this request targets. |
+| `quorum` | config | int | default `1` | Approve decisions needed before `QuorumReached`. |
+| `decisionInstructions` | config | string (JSONata) | optional | Guidance a human sees inline and an `agent` member reads as its decision policy — §8.1. |
+| `timeoutHours` | config | int | optional | Drives `ApprovalTimedOut` if set; unset means the request waits indefinitely. |
+
+Output (on `QuorumReached`): `{ decisions: [{ memberId, decidedByType, decision, comment, decidedAt }], quorumMet }`. Connections: none, unless a member has `auto_decide: true` (§8.1), which requires an `agent` role resolving to a model connector. Policies: `timeout` is expressed via `config.timeoutHours` instead of the generic `policies.timeout` (§10), since it's a business duration, not a call budget.
+
+**`control.switch`** — no config or input schema of its own; every branch condition lives in the node's own `next[].when` (§5.4). Output: `{ matchedBranch, value }`. No connections, no policies — pure and synchronous.
+
+**`control.forEach`**
+
+| Field | In | Type | Required / default | Description |
+|---|---|---|---|---|
+| `sourceExpression` | config | string (JSONata) | required | Evaluated once against prior output to get the array to iterate. |
+| `concurrency` | config | int | default `1` | Max iterations running at once. |
+| `failFast` | config | boolean | default `true` | Whether one iteration failing stops the rest (`LoopFailed`) or all run to completion regardless. |
+
+Output: array of each iteration's child-branch terminal output, in source order. Connections/policies: none of its own — its child nodes declare theirs; `policies.timeout` here (if set) bounds the whole loop, not any one iteration.
+
+**`control.setVariable`**
+
+| Field | In | Type | Required / default | Description |
+|---|---|---|---|---|
+| `scope` | config | enum | required | `global` / `run` / `iteration` (§5.2). |
+| `name` | config | string | required | Variable name within that scope. |
+| `valueExpression` | config | string (JSONata) | required | Evaluated once to produce the new value. |
+
+Output: `{ scope, name, newValue }`. No connections, no policies.
+
+**`control.pollUntil`**
+
+| Field | In | Type | Required / default | Description |
+|---|---|---|---|---|
+| `checkExpression` | config | string (JSONata) | required | Evaluated each tick against the connector's response; true → `ConditionMet`. |
+| `failExpression` | config | string (JSONata) | optional | True → `ConditionFailed` instead of retrying. |
+| `intervalSeconds` | config | int | default `30` | Delay between ticks. |
+| `maxDurationSeconds` | config | int | required | Owned by this kind, not `policies.timeout` (§6.2's callout) — exceeding it is `MaxDurationExceeded`. |
+
+Output: the last checked value. Connections: one role (name is deployment-specific, typically `target`) — whatever system `checkExpression` is evaluated against. Policies: none at the node level; see `maxDurationSeconds` above.
+
+**`control.stop`**
+
+| Field | In | Type | Required / default | Description |
+|---|---|---|---|---|
+| `resultStatus` | config | enum | required | `Succeeded` / `Failed` / `Cancelled` — what the *run* is stamped with. |
+| `message` | config | string (JSONata) | optional | Recorded as the reason on `Terminated`. |
+
+Output: `{ reason }`. No connections, no policies — see §6.2's note on why this kind's terminal event isn't node-scoped.
+
+**`action.transform.jsonBuild`**
+
+| Field | In | Type | Required / default | Description |
+|---|---|---|---|---|
+| `template` | config | jsonb | required | A JSON tree whose leaf strings are JSONata expressions, resolved into the output (§5.6). |
+
+Output: the built JSON object. No connections. Policies: the generic `policies.retry`/`policies.timeout` (§10) apply but are rarely needed for a pure evaluation.
+
+**`action.github.commit`**
+
+| Field | In | Type | Required / default | Description |
+|---|---|---|---|---|
+| `branch` | input | string | required | Target branch. |
+| `path` | input | string | required | File path within the repo. |
+| `content` | input | any | required | File content — typically `$node('buildJson').output`. |
+
+Output: `{ commitSha, htmlUrl }`. Connections: one role, `repo` (type `github`). Policies default: retry 3 attempts exponential / timeout 60s.
+
+**`action.email.send`**
+
+| Field | In | Type | Required / default | Description |
+|---|---|---|---|---|
+| `to` | input | string | required | Recipient. |
+| `subject` | input | string | required | |
+| `body` | input | string | optional | Defaults to a platform template if omitted. |
+
+Output: `{ messageId }`. Connections: one role, `smtp` (type `smtp`). Policies default: retry 3 attempts / timeout 30s.
+
+**`action.github.awaitWorkflowRun`**
+
+| Field | In | Type | Required / default | Description |
+|---|---|---|---|---|
+| `commitSha` | input | string | required | Correlates to the run via GitHub's `head_sha` filter (§13.2). |
+| `locate.intervalSeconds` / `locate.maxDurationSeconds` | config | int | default `10` / `300` | Locate-phase cadence and budget. |
+| `await.intervalSeconds` / `await.maxDurationSeconds` | config | int | default `30` / `1800` | Watch-phase cadence and budget. |
+
+Output: `{ ghRunId, conclusion, htmlUrl }`. Connections: one role, `repo` (type `github`). Policies: none at the node level — both phases own their own duration budgets, per §6.2's callout.
+
+**`agent.loop`**
+
+| Field | In | Type | Required / default | Description |
+|---|---|---|---|---|
+| `goal` | config | string (JSONata) | required | The instructions/prompt the agent reasons from. |
+| `maxIterations` | config | int | default `10` | Hard cap independent of `policies.timeout`. |
+| `maxCostUsd` | config | number | optional | Token/cost budget; exceeding it is `MaxCostExceeded`. |
+| `tools` | config | array\<string\> | optional | Which platform tools the loop may call. |
+
+Output: `{ result, transcriptSummary }`. Connections: one role, `model` (type `llm`). Policies: `policies.timeout` bounds the whole loop; `maxIterations`/`maxCostUsd` are the kind's own internal caps, the same pattern as `pollUntil`/`awaitWorkflowRun` owning multi-phase budgets.
 
 ---
 
@@ -501,6 +763,49 @@ sequenceDiagram
 ```
 
 Each group's approvers only ever see and act on their own node — an "agent" approving is just a group member calling the same two endpoints with a service credential instead of a browser session. Nothing about combining groups lives inside the approval kind; the downstream switch decides, so the identical mechanism handles three groups, five groups, or a mix of approval and non-approval predecessors without the approval kind ever needing to change.
+
+#### 8.1.1 Agent-evaluated approvals
+
+Saying "an agent approves the same way a human does" answers *how* it calls the API, not *how it decides what to call*. A human reads the request and uses judgment; an agent needs that judgment made explicit. That's `config.decisionInstructions` (§6.4) — a JSONata-resolvable string on the `approval` node itself, so it can reference the same `$trigger`/`$vars`/`$context` as everything else:
+
+```json
+{
+  "id": "approve-platform", "kind": "approval", "version": 1,
+  "name": "Platform leads approval",
+  "config": {
+    "groupId": "platform-leads",
+    "quorum": 1,
+    "decisionInstructions": "Approve if $trigger.sku is in ['Standard_DS3_v2','Standard_DS4_v2'] and $vars.run.estimatedMonthlyCost < 5000. Reject with a comment citing the specific rule if either condition fails. Escalate (reject, comment 'needs human review') if the request mentions a region not in $vars.global.approvedRegions."
+  },
+  "next": [ { "to": "bothApproved" } ]
+}
+```
+
+This one field does two jobs at once: the Approval Inbox (§14.4) renders it as inline policy text for a human, and it's exactly what an agent member reads as its decision prompt — one source of truth for "what does approving this actually mean," not a policy written once for people and separately reverse-engineered by whoever wires up the agent.
+
+`approval_group_member.member_type` (§4) is what makes a group's composition explicit rather than a convention nobody enforces — a `human` member's `identity` is an email, an `agent` member's is a connection alias resolving to a model/agent connector. From there, two modes, chosen per member via `auto_decide`:
+
+- **Self-polling (`auto_decide: false`, the default)** — no different from §8.1's sequence diagram above: the agent is an external actor with a service credential, calling `GET /approvals/pending?approverId=` on its own schedule, reading `decision_instructions` off the pending request, reasoning with its own model, and calling `POST /approvals/{id}/decision` like anyone else. The Engine does nothing differently — it doesn't know or care that the caller wasn't a browser.
+- **Engine-invoked (`auto_decide: true`)** — the Engine evaluates that member's decision itself, inline, the moment the request is created, using the same executor pattern as `agent.loop` (§6.4) but as a single bounded call rather than an iterating loop: feed it `decision_instructions`, the trigger payload, and `$context`; expect back `{ decision, comment }`; record it as an `approval_decision` row with `decided_by_type: "agent"` exactly as if that call had hit the API.
+
+```mermaid
+sequenceDiagram
+  participant Engine
+  participant DB as Postgres
+  participant LLM as Model connector
+  participant SB as Service Bus
+
+  Engine->>DB: create approve-platform (Running), raise Requested
+  Note over Engine,DB: member platform-bot has auto_decide = true
+  Engine->>DB: read decision_instructions + $trigger + $context
+  Engine->>LLM: evaluate decision_instructions against this request
+  LLM-->>Engine: { decision: "approve", comment: "sku and cost within policy" }
+  Engine->>DB: insert approval_decision (decided_by_type = agent), DecisionRecorded
+  Engine->>DB: quorum(1) reached -> QuorumReached, approve-platform.status = Succeeded
+  Engine->>SB: publish NodeEvent(approve-platform, QuorumReached)
+```
+
+Either mode produces the same `DecisionRecorded`/`QuorumReached` events (§6.2) with the same shape — `decided_by_type` is what the Audit Trail (§14.5) uses to show "approved by platform-bot (agent)" instead of a person's name, not a different event vocabulary. A group can mix both: a fast agent pre-screen with `auto_decide: true` plus a human member as a second required signer under the same quorum, with no special-casing anywhere in the approval kind itself.
 
 ### 8.2 Fan-out / fan-in and the agentic loop
 
@@ -750,7 +1055,7 @@ The UI has two audiences — people building and publishing workflows, and peopl
 
 - Canvas (React Flow) rendering `nodes` and each node's own `next` list (§5.4) directly — node position from `layout` when present, auto-laid-out when absent.
 - Node palette sourced live from `GET /node-kinds`, grouped by the categories in §6.1.
-- **Node inspector**: selecting a node renders a form generated from that kind's input/config schema, built from the §5.1 field shape (`type`/`label`/`description`/`required`/`default`) — a new node kind becomes editable with zero UI code.
+- **Node inspector**: selecting a node renders a form generated from that kind's input/config schema, built from the §5.1 field shape (`type`/`label`/`description`/`required`/`default`) — a new node kind becomes editable with zero UI code. An "Events" section on the same panel lists that kind's event catalogue (§6.2) — each event's name, whether it's terminal, and its `description` — so an author can see what a node is actually capable of doing (and which of those outcomes end it) before ever running it.
 - **Connections panel**: for a node's declared roles (§5.5), a dropdown per role picks a workflow-level alias; a separate workflow-level "Connections" tab manages the alias list and its per-environment bindings (§9).
 - **Variables panel**: global variables (read-only list, with a request-access action) and run-scoped variables (add/edit), each scope-tagged per §5.2.
 - **Validation surface**: publish-time errors — a dangling `next` target, a write to a `ro` variable, a connection type mismatch, an unreachable node — shown inline on the offending node; Publish stays disabled until they clear.
@@ -775,7 +1080,7 @@ Generated purely from `trigger.payloadSchema` (§5.1, §5.6) — the same render
 
 - A chronological, filterable table reading `GET /runs/{runId}/events` directly — every row is one `event` table row: sequence, timestamp, node id, event type, and an expandable payload viewer.
 - Filters by node, event type, and time range are necessary in practice: a single `pollUntil`/`awaitWorkflowRun` node can log dozens of non-terminal rows (`Checked`, `RunProgressed`) over one run.
-- This is the completeness guarantee from §4 made visible — every event, terminal or not, shows up here.
+- This is the completeness guarantee from §4 made visible — every event, terminal or not, shows up here, and every `eventType` that can appear in this table is drawn from the full per-kind catalogue in §6.2, nothing ad hoc.
 - Linked both ways: a node's detail drawer in §14.3 deep-links into its slice of the trail, and the trail is also available as a standalone tab per run.
 
 ### 14.6 Workflow Catalogue
@@ -791,7 +1096,39 @@ List of workflows with their draft/published versions and recent runs — the la
 - Confirm the recipient list/routing behind `notifyOpsFailure`.
 - Platform-level global variable registry: how globals are registered, and who can grant a workflow read/write access to one.
 - Node kind SDK / plugin packaging for third parties adding new connectors.
-- Visual wireframes/mockups for the six screens in §14, if useful ahead of frontend implementation.
+
+---
+
+## 16. Versioning Strategy
+
+The word "version" already appears on three unrelated things in this spec — a workflow's own revision history, a node's `kind`+`version` reference, and (implicitly) the shape of the JSON envelope itself. Conflating them is how a system ends up unable to answer "is it safe to change this" precisely. Each gets its own rule.
+
+### 16.1 Workflow version — a specific workflow's content over time
+
+Already governed by decision #4 (Appendix A): `workflow_version.version_number` is monotonic per workflow, assigned on publish, and `definition` is immutable from that point on. What this section adds:
+
+- **Creation is always copy-on-write.** Editing a published workflow opens a new `draft` `workflow_version` seeded from the version being edited; there is no in-place edit of a published row, ever.
+- **Old published versions are never deleted**, only `archived` — archiving removes a version from the trigger-time default (next bullet) and from the Catalogue's (§14.6) primary listing, but any `workflow_run` already pinned to it keeps reading it forever, and it stays directly triggerable by version number for anyone who still needs to.
+- **A trigger targets a version, not "the workflow."** `POST /workflows/{id}/trigger` defaults to the newest `published` version, but accepts an optional `versionNumber` to target an older (non-archived) one explicitly — this is what makes a canary or staged rollout possible without a separate mechanism: point a subset of triggers at the new version, leave the rest on the old one, promote the default once satisfied.
+- **A running instance never moves versions.** Decision #4 already covers this; restated here because it's the anchor every other rule in this section depends on — nothing below is allowed to break an in-flight run's ability to keep reading the exact version it started on.
+
+### 16.2 Node kind version — a kind's own contract over time
+
+`node_kind_definition` (§4) keyed by `kind`+`version` is what lets a published workflow reference a connector's behavior without that behavior silently changing underneath it (§6.1's opening line). The policy that makes that guarantee real:
+
+- **A version bump is required for any breaking change**: removing or renaming an input/output/config field, changing a field's `type`, removing or renaming an event, or changing what a terminal event maps to (its `resultStatus`). Any of these would change the runtime behavior of every already-published workflow using that kind if applied in place — which is exactly what pinning a node to `kind`+`version` exists to prevent.
+- **A non-breaking addition may ship under the same version**: a new optional config field with a default, or a new non-terminal event that doesn't touch existing terminal semantics. Existing workflows are unaffected and don't need to opt in to see it — the field simply doesn't appear in their `input_snapshot` until they add it.
+- **Old versions are never deleted from the registry.** The same immutability guarantee that applies to `workflow_version.definition` extends transitively to every node kind version it can reference — a run publishing today against `action.github.commit` v1 must still resolve v1's executor a year from now, even after v3 ships.
+- **Deprecation, not removal.** `node_kind_definition.deprecated` (§4) plus `deprecated_message` blocks *new* usage — publish-time validation rejects a workflow version that adds a node targeting a deprecated kind version, and the Designer's palette (§14.1) hides deprecated versions behind an explicit "show deprecated" toggle. It does nothing to workflows already published against it; those keep running exactly as before.
+- **Migration is manual, by design.** There's no automatic rewrite of a node's `version` field across a workflow's history — an author opens a new draft, bumps the version, and adjusts `config`/`inputs` to match the new contract, the same way they'd handle any other breaking dependency upgrade. The registry entry's own changelog (a `notes` field per version, not modeled as a separate table here) is what the Designer can diff against to show "what changed between v1 and v2" while they do it.
+
+### 16.3 Workflow JSON envelope/schema version
+
+Distinct from both of the above: the shape of the JSON document itself — the fact that it has a top-level `nodes` array, a `trigger` object, edges as `next` rather than a separate list (§5.4) — is its own thing to version, because it can change independently of any single workflow's content or any single node kind's contract. A top-level `schemaVersion` (e.g. `"schemaVersion": 1`, sitting next to `workflowId`) is what a parser dispatches on, so that if the envelope shape itself ever needs to change — say, `trigger` becoming `triggers: []` to support more than one trigger kind — every historical `workflow_version.definition` row (immutable, per §16.1) keeps parsing under the schema version it was written against, with no backfill or rewrite required. This is the same append-only philosophy as the `event` table (§4) applied to the definition format itself.
+
+### 16.4 Connection types
+
+A connection `type` (§9) versions the same way a node kind does, for the same reason: `connection.type_version` (§4) exists because a connection type's own contract can change — GitHub requiring an additional OAuth scope, an SMTP connector adding a required `fromDomain` field — independent of any workflow or any node kind that happens to use a `github`- or `smtp`-typed role. The same rules apply: a scope/field addition that doesn't break an existing binding can ship under the same `type_version`; anything that would invalidate an existing `connection_binding` (§4) needs a new one, and old bindings keep resolving against whatever `type_version` they were created under.
 
 ---
 
@@ -816,5 +1153,10 @@ List of workflows with their draft/published versions and recent runs — the la
 | 15 | Retry and timeout live under a single `policies` object on the node. | Leaves room for future policies (concurrency, caching, circuit-breaker) without new top-level node keys. |
 | 16 | The GitHub Actions status check is a single custom node kind (`action.github.awaitWorkflowRun`) with an internal two-phase state machine, not two graph nodes and not generic `control.pollUntil` config. | Two sequential GitHub API calls with different cadences/timeouts is API-specific logic that belongs in an executor, not in fragile config strings; the graph should show one status change for one logical wait. |
 | 17 | `node_execution` has both `state` (opaque, executor-only, mutable while non-terminal) and `output` (set once, on the terminal event, the only one exposed downstream). | Makes explicit which data is a kind's private working scratchpad versus its public result — the root of "how terminal events are handled." |
+| 18 | Every event in a kind's manifest carries a `description`, using the same field shape as everything else (§5.1, decision 12) — not just an event `type` and `terminal`/`resultStatus` flag. | An author picking a node in the Designer needs to know what a node can actually do in plain language, not decode kind-specific enum names; also makes the §6.2 catalogue the single source of truth for every `eventType` the Audit Trail can ever show. |
+| 19 | An agent group member's decision policy is authored once, as `approval.config.decisionInstructions` (§8.1.1), and read by both the human-facing Approval Inbox and an agent member's own reasoning — not written twice in two different places. | One source of truth for "what does approving this mean"; an agent's decision logic can't silently drift from what a human reviewing the same node sees. |
+| 20 | An agent approval member supports two modes — self-polling (`auto_decide: false`, default) or Engine-invoked inline (`auto_decide: true`) — both producing the same `DecisionRecorded`/`QuorumReached` events, distinguished only by `decided_by_type` (§4, §8.1.1). | Lets a fully external agent integrate with zero Engine changes (matches decision on approval composability), while still offering a first-class inline option without inventing a second event vocabulary for machine decisions. |
+| 21 | Versioning is three independent axes — workflow version (§16.1), node kind version (§16.2), and workflow-envelope `schemaVersion` (§16.3) — each with its own bump/deprecation/immutability rules, rather than one overloaded "version" concept. | Each axis changes for a different reason and on a different cadence (a workflow author publishing a draft vs. a platform team shipping a breaking connector change vs. the JSON format itself evolving); conflating them makes it impossible to state precisely what's safe to change. |
+| 22 | A node kind version bump is required only for breaking changes (removed/renamed field, changed field type, removed/renamed event, changed terminal→status mapping); additive, backward-compatible changes ship under the same version (§16.2). | Matches how the rest of the schema already treats compatibility (optional fields with defaults, per decision 12); avoids a version-number bump — and the deprecation/migration overhead that implies — for changes that affect no existing workflow. |
 
----
+--
